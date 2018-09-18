@@ -3,12 +3,18 @@
 import os, sys, time, re
 
 pid = os.getpid()               # get and remember pid
-PS1 = "[test] $ "
+PS1 = "test $ "
 PWD = os.environ['PWD']
 command = ['null']
+exit = False
 
-while command[0] != "exit":
+while not exit:
     command = input(PS1).split()
+    if len(command) == 0:
+        command = [' ']
+    elif command[0] == "exit":
+        exit = True
+        break
 
     args = command[0:]
     os.write(1, ("About to fork (pid=%d)\n" % pid).encode())
@@ -24,10 +30,22 @@ while command[0] != "exit":
                      (os.getpid(), pid)).encode())
 
         os.close(1)                 # redirect child's stdout
-        sys.stdout = open("p4-output.txt", "w")
+
+        #redirect
+        redirect = "p4-output.txt"
+        for index, arg in enumerate(args):
+            if arg == '>':
+                redirect = args[index + 1]
+                args.remove(args[index+1]) #remove file name
+                args.remove(arg)    #remove >
+
+
+        sys.stdout = open(redirect, "w")
         fd = sys.stdout.fileno() # os.open("p4-output.txt", os.O_CREAT)
         os.set_inheritable(fd, True)
         os.write(2, ("Child: opened fd=%d for writing\n" % fd).encode())
+
+
 
         for dir in re.split(":", os.environ['PATH']): # try each directory in path
             program = "%s/%s" % (dir, command[0])
@@ -49,3 +67,4 @@ while command[0] != "exit":
         childPidCode = os.wait()
         os.write(1, ("Parent: Child %d terminated with exit code %d\n" % 
                      childPidCode).encode())
+

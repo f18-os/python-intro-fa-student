@@ -10,20 +10,16 @@ def pipe(left, right):
     pr,pw = os.pipe()
     for f in (pr, pw):
         os.set_inheritable(f, True)
-    print("pipe fds: pr=%d, pw=%d" % (pr, pw))
 
     import fileinput
 
-    print("About to fork (pid=%d)" % pid)
 
     rc = os.fork()
 
     if rc < 0:
-        print("fork failed, returning %d\n" % rc, file=sys.stderr)
         sys.exit(1)
 
     elif rc == 0:                   #  child - will write to pipe
-        print("Child: My pid==%d.  Parent's pid=%d" % (os.getpid(), pid), file=sys.stderr)
         args = left[0:]
         program = left[0]
 
@@ -31,18 +27,20 @@ def pipe(left, right):
         os.dup(pw)
         for fd in (pr, pw):
             os.close(fd)
-        print("hello from child")
+        #print("hello from child")
+        fd = sys.stdout.fileno()
         execute(program, args)
      
     else:                           # parent (forked ok)
-        args = left[0:]
+        args = right[0:]
         program = right[0]
-        print("Parent: My pid==%d.  Child's pid=%d" % (os.getpid(), rc), file=sys.stderr)
+        #print("Parent: My pid==%d.  Child's pid=%d" % (os.getpid(), rc), file=sys.stderr)
         os.close(0)
         os.dup(pr)
         execute(program, args)
         for fd in (pw, pr):
             os.close(fd)
+        fd = sys.stdin.fileno()
         for line in fileinput.input():
             print("From child: <%s>" % line)
 
@@ -55,7 +53,7 @@ def execute(program, args):
         except FileNotFoundError:             # ...expected
             pass                              # ...fail quietly 
 
-PS1 = "test $ "
+PS1 = ""
 if PS1 in os.environ:
     PS1 = os.environ['PS1']
 PWD = os.environ['PWD']

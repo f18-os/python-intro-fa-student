@@ -6,6 +6,7 @@ def changeDirectory():
     print("nothing") 
 
 def pipe(left, right):
+    os.write(1, (left[0] + " " + right[0] + "\n").encode())
     pr,pw = os.pipe()
     for f in (pr, pw):
         os.set_inheritable(f, True)
@@ -31,10 +32,7 @@ def pipe(left, right):
         for fd in (pr, pw):
             os.close(fd)
         print("hello from child")
-        try:
-            os.execve(program, args, os.environ) # try to exec program
-        except FileNotFoundError:             # ...expected
-            pass                              # ...fail quietly 
+        execute(program, args)
      
     else:                           # parent (forked ok)
         args = left[0:]
@@ -42,36 +40,42 @@ def pipe(left, right):
         print("Parent: My pid==%d.  Child's pid=%d" % (os.getpid(), rc), file=sys.stderr)
         os.close(0)
         os.dup(pr)
-        os.execve(program, args, os.environ) # try to exec program
+        execute(program, args)
         for fd in (pw, pr):
             os.close(fd)
         for line in fileinput.input():
             print("From child: <%s>" % line)
 
+def execute(program, args):
+    for dir in re.split(":", os.environ['PATH']): # try each directory in path
+        program = "%s/%s" % (dir, command[0])
+
+        try:
+            os.execve(program, args, os.environ) # try to exec program
+        except FileNotFoundError:             # ...expected
+            pass                              # ...fail quietly 
 
 PS1 = "test $ "
-PS1 = os.environ['PS1']
+if PS1 in os.environ:
+    PS1 = os.environ['PS1']
 PWD = os.environ['PWD']
 command = []
 exit = False
 
 while not exit:
     try:
-        command = input().split()
+        command = input(PS1)
     except EOFError:
         sys.exit(1)
     if len(command) < 1:
         #command = [' ']
         continue
-    elif command[0] == "exit":
+    elif command == "exit":
         exit = True
         break
 
     pid = os.getpid()               # get and remember pid
-    if command[0] == "cd":
-        changeDirectory()
 
-    args = command[0:]
     #os.write(1, ("About to fork (pid=%d)\n" % pid).encode())
 
     rc = os.fork()
@@ -82,17 +86,27 @@ while not exit:
         sys.exit(1)
 
     elif rc == 0:                   # child
+
+        for char in command:
+            if char == "|":
+                left, right = command.split('|')
+                os.write(1, (left + " " + right + "\n").encode())
+                pipe(left.split(),right.split())
+                command = "nothing"
         #os.write(1, ("Child: My pid==%d.  Parent's pid=%d\n" % 
         #             (os.getpid(), pid)).encode())
 
         #os.close(1)                 # redirect child's stdout
+        command = command.split()
 
+        if command[0] == "cd":
+            changeDirectory()
+
+        args = command[0:]
         #redirect
         redirect = "p4-output.txt"
         for index, arg in enumerate(args):
-            if arg == "|":
-                left, right = args.split('|')
-                pipe(left.split(),right.split())
+
 
             if arg == '>':
                 redirect = args[index + 1]

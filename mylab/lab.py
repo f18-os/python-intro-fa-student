@@ -5,15 +5,61 @@ import os, sys, time, re
 def changeDirectory():
     print("nothing") 
 
+def pipe(left, right):
+    pr,pw = os.pipe()
+    for f in (pr, pw):
+        os.set_inheritable(f, True)
+    print("pipe fds: pr=%d, pw=%d" % (pr, pw))
+
+    import fileinput
+
+    print("About to fork (pid=%d)" % pid)
+
+    rc = os.fork()
+
+    if rc < 0:
+        print("fork failed, returning %d\n" % rc, file=sys.stderr)
+        sys.exit(1)
+
+    elif rc == 0:                   #  child - will write to pipe
+        print("Child: My pid==%d.  Parent's pid=%d" % (os.getpid(), pid), file=sys.stderr)
+        args = left[0:]
+        program = left[0]
+
+        os.close(1)                 # redirect child's stdout
+        os.dup(pw)
+        for fd in (pr, pw):
+            os.close(fd)
+        print("hello from child")
+        try:
+            os.execve(program, args, os.environ) # try to exec program
+        except FileNotFoundError:             # ...expected
+            pass                              # ...fail quietly 
+     
+    else:                           # parent (forked ok)
+        args = left[0:]
+        program = right[0]
+        print("Parent: My pid==%d.  Child's pid=%d" % (os.getpid(), rc), file=sys.stderr)
+        os.close(0)
+        os.dup(pr)
+        os.execve(program, args, os.environ) # try to exec program
+        for fd in (pw, pr):
+            os.close(fd)
+        for line in fileinput.input():
+            print("From child: <%s>" % line)
 
 
 PS1 = "test $ "
+PS1 = os.environ['PS1']
 PWD = os.environ['PWD']
 command = []
 exit = False
 
 while not exit:
-    command = input(PS1).split()
+    try:
+        command = input().split()
+    except EOFError:
+        sys.exit(1)
     if len(command) < 1:
         #command = [' ']
         continue
@@ -29,6 +75,7 @@ while not exit:
     #os.write(1, ("About to fork (pid=%d)\n" % pid).encode())
 
     rc = os.fork()
+    #r,w = os.pipe()
 
     if rc < 0:
         #os.write(2, ("fork failed, returning %d\n" % rc).encode())
@@ -43,6 +90,10 @@ while not exit:
         #redirect
         redirect = "p4-output.txt"
         for index, arg in enumerate(args):
+            if arg == "|":
+                left, right = args.split('|')
+                pipe(left.split(),right.split())
+
             if arg == '>':
                 redirect = args[index + 1]
                 args.remove(args[index+1]) #remove file name
@@ -77,7 +128,6 @@ while not exit:
 
         #os.write(2, ("Child:    Error: Could not exec %s\n" % args[0]).encode())
         sys.exit(1)                 # terminate with error
-
     #else:                           # parent (forked ok)
         #os.write(1, ("Parent: My pid=%d.  Child's pid=%d\n" % 
         #             (pid, rc)).encode())
